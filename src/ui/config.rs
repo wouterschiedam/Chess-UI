@@ -1,4 +1,6 @@
-use crate::defs::Square;
+use std::time::Instant;
+
+use crate::defs::{Sides, Square};
 
 #[derive(Debug, Clone)]
 pub struct UIConfig {
@@ -72,5 +74,26 @@ impl std::fmt::Display for GameMode {
                 GameMode::EngineEngine => "Engine vs Engine",
             }
         )
+    }
+}
+
+pub enum GameTab {
+    UpdateTime(Sides),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Clock {
+    pub wtime: u128,
+    pub btime: u128,
+    pub last_tick: Instant,
+}
+
+impl Clock {
+    pub fn new() -> Self {
+        Self {
+            wtime: 5 * 60 * 1000, // Example: 5 minutes in milliseconds
+            btime: 5 * 60 * 1000, // Example: 5 minutes in milliseconds
+            last_tick: Instant::now(),
+        }
     }
 }

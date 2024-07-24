@@ -1,17 +1,22 @@
 use std::path::Path;
+use std::time::Instant;
 
-use super::config::{GameMode, PromotionChoice, Promotions, UIConfig};
+use super::config::{Clock, GameMode, PromotionChoice, Promotions, UIConfig};
 use super::engine::{EngineStatus, UIengine};
 use super::settings::{SettingsMessage, SettingsTab};
 use super::styling::button::CustomButtonStyle;
+use super::styling::container::container_appearance;
 use crate::board::defs::{Pieces, Squares, SQUARE_NAME};
 use crate::board::Board;
 use crate::defs::{Sides, Square};
 use crate::movegen::defs::{Move, MoveList, MoveType, Shift};
 use crate::movegen::MoveGenerator;
 use iced::alignment::{Horizontal, Vertical};
+use iced::theme::ProgressBar;
+use iced::widget::container::StyleSheet;
 use iced::widget::{
-    column, image, responsive, row, Button, Column, Container, Image, Radio, Row, Svg, Text,
+    column, image, progress_bar, responsive, row, Button, Column, Container, Image, Radio, Row,
+    Svg, Text,
 };
 use iced::{
     executor, Alignment, Application, Color, Command, Element, Length, Sandbox, Settings, Size,
@@ -21,14 +26,18 @@ use tokio::sync::mpsc::Sender;
 
 pub struct Editor {
     board: Board,
-    engine: UIengine,
-    engine_status: EngineStatus,
+    engine1: UIengine,
+    engine2: UIengine,
+    engine1_status: EngineStatus,
+    engine2_status: EngineStatus,
     movegen: MoveGenerator,
     settings: SettingsTab,
     from_square: Option<Square>,
-    engine_sender: Option<Sender<String>>,
+    engine1_sender: Option<Sender<String>>,
+    engine2_sender: Option<Sender<String>>,
     highlighted_squares: Vec<Square>,
     promotion: Promotions,
+    eval: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -49,6 +58,10 @@ pub enum Message {
     ChangeStartPos,
     SelectSideToMove(usize),
     PromotionSelected(PromotionChoice),
+    Tick,
+    UpdateTime,
+    UpdateEval(f32),
+    RawMove(Vec<String>),
 }
 
 pub fn run() -> iced::Result {
@@ -71,14 +84,24 @@ impl Application for Editor {
         (
             Self {
                 board: Board::build(),
-                engine: UIengine::new(),
-                engine_status: EngineStatus::TurnedOff,
+                engine1: UIengine::new(
+                    "/Users/wouter/personal/rust/chess-engine/target/release/chess-engine"
+                        .to_string(),
+                ),
+                engine2: UIengine::new(
+                    "/Users/wouter/personal/rust/chess-engine/target/debug/chess-engine"
+                        .to_string(),
+                ),
+                engine1_status: EngineStatus::TurnedOff,
+                engine2_status: EngineStatus::TurnedOff,
                 movegen: MoveGenerator::new(),
                 settings: SettingsTab::new(),
                 from_square: None,
-                engine_sender: None,
+                engine1_sender: None,
+                engine2_sender: None,
                 highlighted_squares: vec![],
                 promotion: Promotions::default(),
+                eval: 50.0,
             },
             Command::none(),
         )
@@ -90,9 +113,10 @@ impl Application for Editor {
     fn update(&mut self, message: self::Message) -> Command<Message> {
         match (self.from_square, message) {
             (None, Message::SelectSquare(pos)) => {
-                //
                 let side = self.board.side_to_move();
                 let color = self.board.color_on(pos);
+
+                println!("{:?}", pos);
 
                 // Reset highlighted squares
                 self.highlighted_squares.clear();
@@ -264,10 +288,23 @@ impl Application for Editor {
                 // Only if Engine is playing against humans and only if it is not the player's turn
                 if self.settings.game_mode == GameMode::PlayerEngine {
                     if !(self.settings.player_side as usize == self.board.side_to_move()) {
-                        if let Some(sender) = &self.engine_sender {
+                        if let Some(sender) = &self.engine1_sender {
                             if let Err(e) = sender.blocking_send(self.board.create_fen()) {
                                 eprintln!("Lost connection with the engine: {}", e);
                             }
+                        }
+                    }
+                }
+
+                if self.settings.game_mode == GameMode::EngineEngine {
+                    if let Some(sender) = &self.engine1_sender {
+                        if let Err(e) = sender.blocking_send(self.board.create_fen()) {
+                            eprintln!("Lost connection with the engine: {}", e);
+                        }
+                    }
+                    if let Some(sender) = &self.engine2_sender {
+                        if let Err(e) = sender.blocking_send(self.board.create_fen()) {
+                            eprintln!("Lost connection with the engine: {}", e);
                         }
                     }
                 }
@@ -280,29 +317,72 @@ impl Application for Editor {
                 Command::none()
             }
             (_, Message::StartEngine) => {
-                match self.engine_status {
+                if self.settings.game_mode == GameMode::EngineEngine {
+                    match self.engine2_status {
+                        EngineStatus::TurnedOff => {
+                            if self.engine2_status == EngineStatus::TurnedOff {
+                                if Path::new(&self.engine2.engine_path).exists() {
+                                    self.engine1.position = self.board.create_fen();
+                                    self.engine1_status = EngineStatus::TurnedOn;
+                                } else {
+                                    println!("Invalid engine 1 path");
+                                }
+                            } else {
+                                // Turn off engines if not in EngineEngine mode
+                                self.engine2_status = EngineStatus::TurnedOff;
+                            }
+                        }
+                        _ => {
+                            if let Some(sender) = &self.engine1_sender {
+                                sender
+                                    .blocking_send(String::from("STOP"))
+                                    .expect("Error quiting engine");
+                                self.engine1_sender = None;
+                            }
+                        }
+                    }
+                }
+
+                match self.engine1_status {
                     EngineStatus::TurnedOff => {
-                        // Check if engine path is correct
-                        if Path::new(&self.engine.engine_path).exists() {
-                            self.engine.position = self.board.create_fen();
-                            self.engine_status = EngineStatus::TurnedOn;
+                        if self.engine1_status == EngineStatus::TurnedOff {
+                            if Path::new(&self.engine1.engine_path).exists() {
+                                self.engine1.position = self.board.create_fen();
+                                self.engine1_status = EngineStatus::TurnedOn;
+                            } else {
+                                println!("Invalid engine 1 path");
+                            }
                         } else {
-                            println!("Invalid engine path");
+                            // Turn off engines if not in EngineEngine mode
+                            self.engine1_status = EngineStatus::TurnedOff;
                         }
                     }
                     _ => {
-                        if let Some(sender) = &self.engine_sender {
+                        if let Some(sender) = &self.engine1_sender {
                             sender
                                 .blocking_send(String::from("STOP"))
                                 .expect("Error quiting engine");
-                            self.engine_sender = None;
+                            self.engine1_sender = None;
                         }
                     }
                 }
                 Command::none()
             }
             (_, Message::EngineReady(message)) => {
-                self.engine_sender = Some(message);
+                if self.engine1_status == EngineStatus::TurnedOn && self.engine1_sender.is_none() {
+                    self.engine1_sender = Some(message);
+                } else if self.engine2_status == EngineStatus::TurnedOn
+                    && self.engine2_sender.is_none()
+                {
+                    self.engine2_sender = Some(message);
+                }
+                if self.settings.game_mode == GameMode::EngineEngine {
+                    if let Some(engine1_sender) = &self.engine1_sender {
+                        if let Err(e) = engine1_sender.blocking_send(self.board.create_fen()) {
+                            eprintln!("Lost connection with engine 1: {}", e);
+                        }
+                    }
+                }
                 Command::none()
             }
             (_, Message::EventOccurred(_event)) => {
@@ -357,10 +437,13 @@ impl Application for Editor {
             }
             (_, Message::ChangeStartPos) => {
                 // update board
-                let _ = self.board.read_fen(Some("1k6/6P1/8/8/8/8/8/2K5 w - - 0 1"));
+                let _ = self
+                    .board
+                    .read_fen(Some("3r4/3r4/3k4/8/8/8/8/3K4 w - - 0 1"));
 
                 // update engine
-                self.engine.position = "1k6/6P1/8/8/8/8/8/2K5 w - - 0 1".to_string();
+                self.engine1.position = "3r4/3r4/3k4/8/8/8/8/3K4 w - - 0 1".to_string();
+                self.engine2.position = "3r4/3r4/3k4/8/8/8/8/3K4 w - - 0 1".to_string();
                 Command::none()
             }
             (_, Message::PromotionSelected(choice)) => {
@@ -380,7 +463,7 @@ impl Application for Editor {
                                                             //
                     if self.settings.game_mode == GameMode::PlayerEngine {
                         if !(self.settings.player_side as usize == self.board.side_to_move()) {
-                            if let Some(sender) = &self.engine_sender {
+                            if let Some(sender) = &self.engine1_sender {
                                 if let Err(e) = sender.blocking_send(self.board.create_fen()) {
                                     eprintln!("Lost connection with the engine: {}", e);
                                 }
@@ -390,16 +473,41 @@ impl Application for Editor {
                 }
                 Command::none()
             }
+            (_, Message::UpdateTime) => Command::none(),
+            (_, Message::Tick) => {
+                let now = Instant::now();
+                let elapsed = now.duration_since(self.engine1.clock.last_tick).as_millis();
+
+                if self.board.side_to_move() == Sides::WHITE {
+                    self.engine1.clock.wtime = self.engine1.clock.wtime.saturating_sub(elapsed);
+                } else {
+                    self.engine1.clock.btime = self.engine1.clock.btime.saturating_sub(elapsed);
+                }
+
+                self.engine1.clock.last_tick = now;
+
+                Command::none()
+            }
+            (_, Message::UpdateEval(eval)) => {
+                println!("{:?}", eval);
+                self.eval = eval;
+                Command::none()
+            }
+            (_, Message::RawMove(themove)) => {
+                //println!("{:?}", themove);
+                Command::none()
+            }
             (_, _) => Command::none(),
         }
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        match self.engine_status {
+        match self.engine1_status {
             EngineStatus::TurnedOff => iced::subscription::events().map(Message::EventOccurred),
             _ => Subscription::batch(vec![
-                UIengine::run_engine(self.engine.clone()),
+                self.engine1.clone().run_engine(),
                 iced::subscription::events().map(Message::EventOccurred),
+                iced::time::every(std::time::Duration::from_millis(1000)).map(|_| Message::Tick),
             ]),
         }
     }
@@ -413,10 +521,12 @@ impl Application for Editor {
                 self.settings.search_depth,
                 self.settings.game_mode,
                 self.settings.view(),
-                self.engine_status != EngineStatus::TurnedOff,
+                self.engine1_status != EngineStatus::TurnedOff,
                 size,
                 &self.highlighted_squares,
                 &self.promotion,
+                &self.engine1,
+                self.eval,
             )
         });
 
@@ -439,6 +549,8 @@ fn main_view<'a>(
     _size: Size,
     highlighted_squares: &Vec<Square>,
     promotion: &Promotions,
+    engine: &UIengine,
+    eval: f32,
 ) -> Element<'a, Message, iced::Renderer<Theme>> {
     let mut board_col = Column::new().spacing(0).align_items(Alignment::Center);
     let mut board_row = Row::new().spacing(0).align_items(Alignment::Center);
@@ -449,6 +561,34 @@ fn main_view<'a>(
         ("/wR.svg", PromotionChoice::Rook),
         ("/wB.svg", PromotionChoice::Bishop),
     ];
+
+    let timer_row = column![
+        Button::new(Text::new(format!(
+            "Black: {}:{:02}",
+            engine.clock.btime / 60000,
+            (engine.clock.btime % 60000) / 1000
+        ))),
+        // .style(
+        //     CustomButtonStyle::new()
+        //         .background_color(Color::from_rgb(1.0, 1.0, 1.0))
+        //         .as_custom()
+        // ),
+        Button::new(Text::new(format!(
+            "White: {}:{:02}",
+            engine.clock.wtime / 60000,
+            (engine.clock.wtime % 60000) / 1000
+        ))) // .style(
+            //     CustomButtonStyle::new()
+            //         .background_color(Color::from_rgb(1.0, 0.0, 0.0)) // Highlight color
+            //         .hovered()
+            //         .background_color(Color::from_rgb(0.4, 0.4, 0.8))
+            //         .pressed()
+            //         .background_color(Color::from_rgb(0.3, 0.3, 0.7))
+            //         .as_custom()
+            // ),
+    ]
+    .padding(30)
+    .spacing(90 * 8);
 
     let ranks;
     let files;
@@ -672,15 +812,28 @@ fn main_view<'a>(
         }
     }
 
+    let evaluation_bar = column![progress_bar(0.0..=100.0, eval)
+        .vertical(true)
+        .height(100 * 8)
+        .width(10)
+        .style(ProgressBar::Danger)]
+    .padding(5);
+
     row![
+        evaluation_bar,
         column![
             board_row,
             column![side_to_play, game_mode_row, navigation_row, moves_played]
                 .width(board_height * 8)
                 .height(Length::Fill)
                 .align_items(Alignment::Center)
-        ],
-        settings_tab
+        ]
+        .padding(5),
+        if !engine_started {
+            column![settings_tab]
+        } else {
+            column![timer_row]
+        }
     ]
     .into()
 }
