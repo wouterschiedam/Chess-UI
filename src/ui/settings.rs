@@ -27,7 +27,7 @@ impl SettingsTab {
             flip_board: false,
             show_coords: true,
             search_depth: 3,
-            game_mode: GameMode::PlayerPlayer,
+            game_mode: GameMode::EngineEngine,
             player_side: 0,
         }
     }

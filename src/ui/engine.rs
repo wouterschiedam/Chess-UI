@@ -34,10 +34,10 @@ pub struct UIengine {
 }
 
 impl UIengine {
-    pub fn new(path: String) -> Self {
+    pub fn new(path: String, depth: u32) -> Self {
         Self {
             engine_path: PathBuf::from(path),
-            search_up_to: 5,
+            search_up_to: depth,
             //position: String::from("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"),
             position: String::from("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"),
             clock: Clock::new(),
