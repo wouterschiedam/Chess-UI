@@ -109,61 +109,61 @@ pub async fn handle_engine_thinking(
 
         let bestmove = response.last().unwrap().split_whitespace().nth(1).unwrap();
 
-        let (p1, p2) = (
-            algebraic_square_to_number(&bestmove[0..2]),
-            algebraic_square_to_number(&bestmove[2..4]),
-        );
-
-        if bestmove.len() >= 5 {
-            let p3 = algebraic_square_to_number(&bestmove[4..5]);
-
-            output
-                .try_send(Message::EngineMove(p1, p2, p3))
-                .expect("Error on the mspc channel in the engine subscription");
-        } else {
-            output
-                .try_send(Message::EngineMove(p1, p2, None))
-                .expect("Error on the mspc channel in the engine subscription");
-        }
-
-        // output
-        //     .try_send(Message::SelectSquare(algebraic_square_to_number(
-        //         &bestmove[0..2],
-        //     )))
-        //     .expect("Error on the mspc channel in the engine subscription");
-        //
-        // output
-        //     .try_send(Message::SelectSquare(algebraic_square_to_number(
-        //         &bestmove[2..4],
-        //     )))
-        //     .expect("Error on the mspc channel in the engine subscription");
+        // let (p1, p2) = (
+        //     algebraic_square_to_number(&bestmove[0..2]),
+        //     algebraic_square_to_number(&bestmove[2..4]),
+        // );
         //
         // if bestmove.len() >= 5 {
-        //     match &bestmove[4..5] {
-        //         "n" => output
-        //             .try_send(Message::PromotionSelected(PromotionChoice::Knight))
-        //             .expect("Error on the mspc channel in the engine subscription"),
-        //         "q" => output
-        //             .try_send(Message::PromotionSelected(PromotionChoice::Queen))
-        //             .expect("Error on the mspc channel in the engine subscription"),
-        //         "b" => output
-        //             .try_send(Message::PromotionSelected(PromotionChoice::Bishop))
-        //             .expect("Error on the mspc channel in the engine subscription"),
-        //         "r" => output
-        //             .try_send(Message::PromotionSelected(PromotionChoice::Rook))
-        //             .expect("Error on the mspc channel in the engine subscription"),
-        //         "k" => output
-        //             .try_send(Message::LogResult("ok".to_owned()))
-        //             .expect("Error on the mspc channel in the engine subscription"),
-        //         _ => {
-        //             // Handle unexpected characters gracefully
-        //             eprintln!("Unexpected promotion character in bestmove: {}", &bestmove);
-        //             output
-        //                 .try_send(Message::RawMove(response))
-        //                 .expect("Error on the mspc channel in the engine subscription");
-        //         }
-        //     }
+        //     let p3 = algebraic_square_to_number(&bestmove[4..5]);
+        //
+        //     output
+        //         .try_send(Message::EngineMove(p1, p2, p3))
+        //         .expect("Error on the mspc channel in the engine subscription");
+        // } else {
+        //     output
+        //         .try_send(Message::EngineMove(p1, p2, None))
+        //         .expect("Error on the mspc channel in the engine subscription");
         // }
+
+        output
+            .try_send(Message::SelectSquare(algebraic_square_to_number(
+                &bestmove[0..2],
+            )))
+            .expect("Error on the mspc channel in the engine subscription");
+
+        output
+            .try_send(Message::SelectSquare(algebraic_square_to_number(
+                &bestmove[2..4],
+            )))
+            .expect("Error on the mspc channel in the engine subscription");
+
+        if bestmove.len() >= 5 {
+            match &bestmove[4..5] {
+                "n" => output
+                    .try_send(Message::PromotionSelected(PromotionChoice::Knight))
+                    .expect("Error on the mspc channel in the engine subscription"),
+                "q" => output
+                    .try_send(Message::PromotionSelected(PromotionChoice::Queen))
+                    .expect("Error on the mspc channel in the engine subscription"),
+                "b" => output
+                    .try_send(Message::PromotionSelected(PromotionChoice::Bishop))
+                    .expect("Error on the mspc channel in the engine subscription"),
+                "r" => output
+                    .try_send(Message::PromotionSelected(PromotionChoice::Rook))
+                    .expect("Error on the mspc channel in the engine subscription"),
+                "k" => output
+                    .try_send(Message::LogResult("ok".to_owned()))
+                    .expect("Error on the mspc channel in the engine subscription"),
+                _ => {
+                    // Handle unexpected characters gracefully
+                    eprintln!("Unexpected promotion character in bestmove: {}", &bestmove);
+                    output
+                        .try_send(Message::RawMove(response))
+                        .expect("Error on the mspc channel in the engine subscription");
+                }
+            }
+        }
     }
 
     Ok(())

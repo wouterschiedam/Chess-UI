@@ -6,6 +6,7 @@ use super::engine::{EngineStatus, UIengine};
 use super::settings::{SettingsMessage, SettingsTab};
 use super::styling::button::CustomButtonStyle;
 use super::styling::container::container_appearance;
+use super::tournament::{self, Tournament};
 use crate::board::defs::{Pieces, Squares, SQUARE_NAME};
 use crate::board::Board;
 use crate::defs::{Sides, Square};
@@ -38,6 +39,7 @@ pub struct Editor {
     highlighted_squares: Vec<Square>,
     promotion: Promotions,
     eval: f32,
+    tournament: Option<Tournament>,
 }
 
 #[derive(Debug, Clone)]
@@ -45,7 +47,7 @@ pub enum Message {
     Settings(SettingsMessage),
     ChangeSettings(Option<UIConfig>),
     SelectSquare(Option<Square>),
-    EngineMove(String),
+    EngineMove(Option<usize>, Option<usize>, Option<usize>),
     EventOccurred(iced::Event),
     StartEngine,
     EngineReady(Sender<String>),
@@ -62,6 +64,10 @@ pub enum Message {
     UpdateTime,
     UpdateEval(f32),
     RawMove(Vec<String>),
+    StartTournament,
+    NextGame,
+    GameFinished(String),
+    LogResult(String),
 }
 
 pub fn run() -> iced::Result {
@@ -87,10 +93,12 @@ impl Application for Editor {
                 engine1: UIengine::new(
                     "/Users/wouter/personal/rust/chess-engine/target/release/chess-engine"
                         .to_string(),
+                    3,
                 ),
                 engine2: UIengine::new(
                     "/Users/wouter/personal/rust/chess-engine/target/debug/chess-engine"
                         .to_string(),
+                    3,
                 ),
                 engine1_status: EngineStatus::TurnedOff,
                 engine2_status: EngineStatus::TurnedOff,
@@ -102,6 +110,7 @@ impl Application for Editor {
                 highlighted_squares: vec![],
                 promotion: Promotions::default(),
                 eval: 50.0,
+                tournament: None,
             },
             Command::none(),
         )
@@ -311,10 +320,41 @@ impl Application for Editor {
 
                 Command::none()
             }
-            (_, Message::EngineMove(_to)) => {
+            (_, Message::EngineMove(from, to, promotion)) => {
                 // Let engine make move
 
                 Command::none()
+            }
+            (_, Message::StartTournament) => {
+                self.tournament = Some(Tournament::new(1, "./tournament_log.txt").unwrap());
+                Command::perform(async { Message::NextGame }, |msg| msg)
+            }
+            (_, Message::NextGame) => {
+                // Check if the tournament is over
+                if let Some(tournament) = &self.tournament {
+                    if tournament.tournament_over() {
+                        println!("Tournament over!");
+                        return Command::none();
+                    }
+                }
+                // Start the next game
+                // Reset board and start engines
+                self.board = Board::build();
+                self.engine1_status = EngineStatus::TurnedOn;
+                self.engine2_status = EngineStatus::TurnedOn;
+                if let Some(sender) = &self.engine1_sender {
+                    sender.blocking_send(self.board.create_fen()).unwrap();
+                }
+                if let Some(sender) = &self.engine2_sender {
+                    sender.blocking_send(self.board.create_fen()).unwrap();
+                }
+                Command::none()
+            }
+            (_, Message::GameFinished(result)) => {
+                if let Some(tournament) = &mut self.tournament {
+                    tournament.log_result(&result).unwrap();
+                }
+                Command::perform(async { Message::NextGame }, |msg| msg)
             }
             (_, Message::StartEngine) => {
                 if self.settings.game_mode == GameMode::EngineEngine {
@@ -770,15 +810,8 @@ fn main_view<'a>(
     let mut navigation_row = Row::new().padding(3).spacing(10);
 
     // Start engine only if playing against engine
-    if !(game_mode == GameMode::PlayerPlayer) {
-        if engine_started {
-            navigation_row = navigation_row
-                .push(Button::new(Text::new("Stop engine")).on_press(Message::StartEngine));
-        } else {
-            navigation_row = navigation_row
-                .push(Button::new(Text::new("Start engine")).on_press(Message::StartEngine));
-        }
-    }
+    navigation_row =
+        navigation_row.push(Button::new(Text::new("Start engine")).on_press(Message::StartEngine));
 
     navigation_row =
         navigation_row.push(Button::new(Text::new("Undo move")).on_press(Message::UndoMove));
@@ -797,6 +830,9 @@ fn main_view<'a>(
 
     navigation_row =
         navigation_row.push(Button::new(Text::new("Kiwipete")).on_press(Message::ChangeStartPos));
+
+    navigation_row = navigation_row
+        .push(Button::new(Text::new("Tournament")).on_press(Message::StartTournament));
 
     let mut moves_played = Row::new()
         .padding(3)
