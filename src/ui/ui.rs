@@ -317,7 +317,10 @@ impl Application for Editor {
                     };
                     return Command::perform(
                         async move {
-                            Message::LogResult(format!("Check mate, {} won the game", side_message))
+                            Message::LogResult(format!(
+                                "Check mate, {} won the game\nFen: {}",
+                                side_message, fen
+                            ))
                         },
                         |msg| msg,
                     );
@@ -363,7 +366,7 @@ impl Application for Editor {
                 Command::perform(async { Message::NextGame }, |msg| msg)
             }
             (_, Message::StartTournament) => {
-                self.tournament = Some(Tournament::new(1, "./src/ui/tournament_log.txt").unwrap());
+                self.tournament = Some(Tournament::new(10, "./src/ui/tournament_log.txt").unwrap());
                 Command::perform(async { Message::NextGame }, |msg| msg)
             }
             (_, Message::NextGame) => {

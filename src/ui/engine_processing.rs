@@ -107,10 +107,6 @@ pub async fn handle_engine_thinking(
         let mut buffer_str = String::new();
         let response = read_moves_from_process(reader, &mut buffer_str).await?;
 
-        output
-            .try_send(Message::RawMove(response.clone()))
-            .expect("Error on the mspc channel in the engine subscription");
-
         let bestmove = response.last().unwrap().split_whitespace().nth(1).unwrap();
 
         let mate = response[response.len() - 2]
@@ -141,12 +137,32 @@ pub async fn handle_engine_thinking(
             algebraic_square_to_number(&bestmove[2..4]),
         );
 
-        if bestmove.len() >= 5 {
-            let p3 = algebraic_square_to_number(&bestmove[4..5]);
+        // output
+        //     .try_send(Message::RawMove(response.clone()))
+        //     .expect("Error on the mspc channel in the engine subscription");
 
-            output
-                .try_send(Message::EngineMove(p1, p2, p3, None))
-                .expect("Error on the mspc channel in the engine subscription");
+        if bestmove.len() >= 5 {
+            match &bestmove[4..5] {
+                "q" => output
+                    .try_send(Message::EngineMove(p1, p2, Some(1), None))
+                    .expect("Error on the mspc channel in the engine subscription"),
+                "r" => output
+                    .try_send(Message::EngineMove(p1, p2, Some(2), None))
+                    .expect("Error on the mspc channel in the engine subscription"),
+                "b" => output
+                    .try_send(Message::EngineMove(p1, p2, Some(3), None))
+                    .expect("Error on the mspc channel in the engine subscription"),
+                "n" => output
+                    .try_send(Message::EngineMove(p1, p2, Some(4), None))
+                    .expect("Error on the mspc channel in the engine subscription"),
+                _ => {
+                    // Handle unexpected characters gracefully
+                    eprintln!("Unexpected promotion character in bestmove: {}", &bestmove);
+                    output
+                        .try_send(Message::RawMove(response))
+                        .expect("Error on the mspc channel in the engine subscription");
+                }
+            }
         } else {
             output
                 .try_send(Message::EngineMove(p1, p2, None, None))
