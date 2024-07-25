@@ -47,16 +47,11 @@ pub enum Message {
     Settings(SettingsMessage),
     ChangeSettings(Option<UIConfig>),
     SelectSquare(Option<Square>),
-    EngineMove(Option<usize>, Option<usize>, Option<usize>),
+    EngineMove(Option<usize>, Option<usize>, Option<usize>, Option<String>),
     EventOccurred(iced::Event),
     StartEngine,
     EngineReady(Sender<String>),
     EngineStopped(bool),
-    UndoMove,
-    UndoMoveVirtual,
-    NextMoveVirtual,
-    ResetBoardEngine,
-    PrintLegalMoves,
     ChangeStartPos,
     SelectSideToMove(usize),
     PromotionSelected(PromotionChoice),
@@ -124,8 +119,6 @@ impl Application for Editor {
             (None, Message::SelectSquare(pos)) => {
                 let side = self.board.side_to_move();
                 let color = self.board.color_on(pos);
-
-                println!("{:?}", pos);
 
                 // Reset highlighted squares
                 self.highlighted_squares.clear();
@@ -291,7 +284,11 @@ impl Application for Editor {
                             //.map(|f| SQUARE_NAME[f.from()].to_owned() + SQUARE_NAME[f.to()])
                             .collect::<Vec<_>>()
                     );
-                    println!("illegal move");
+                    println!(
+                        "illegal move: {}",
+                        SQUARE_NAME[Move::new(move_data).from()].to_owned()
+                            + SQUARE_NAME[Move::new(move_data).to()]
+                    );
                 }
 
                 // Only if Engine is playing against humans and only if it is not the player's turn
@@ -305,28 +302,68 @@ impl Application for Editor {
                     }
                 }
 
-                if self.settings.game_mode == GameMode::EngineEngine {
-                    if let Some(sender) = &self.engine1_sender {
-                        if let Err(e) = sender.blocking_send(self.board.create_fen()) {
-                            eprintln!("Lost connection with the engine: {}", e);
-                        }
-                    }
-                    if let Some(sender) = &self.engine2_sender {
-                        if let Err(e) = sender.blocking_send(self.board.create_fen()) {
-                            eprintln!("Lost connection with the engine: {}", e);
-                        }
-                    }
-                }
-
                 Command::none()
             }
-            (_, Message::EngineMove(from, to, promotion)) => {
+            (_, Message::EngineMove(from, to, promotion, mate)) => {
                 // Let engine make move
 
+                let fen = self.board.create_fen().clone();
+                if mate == Some("mate".to_string()) {
+                    // Bit weird but we flipped already
+                    let side_message = if self.board.side_to_move() != Sides::BLACK {
+                        "black"
+                    } else {
+                        "white"
+                    };
+                    return Command::perform(
+                        async move {
+                            Message::LogResult(format!("Check mate, {} won the game", side_message))
+                        },
+                        |msg| msg,
+                    );
+                }
+
+                if from.unwrap() == 0 && to.unwrap() == 0 {
+                    return Command::perform(
+                        async move {
+                            Message::LogResult(format!(
+                                "Illigal move recorded {:?}, {:?}\nFen: {}",
+                                from, to, fen
+                            ))
+                        },
+                        |msg| msg,
+                    );
+                }
+
+                let side = self.board.side_to_move() == Sides::WHITE;
+                let move_data = self
+                    .board
+                    .generate_move_data(&from.unwrap(), &to, side, promotion);
+
+                self.board.make_move(Move::new(move_data), &self.movegen);
+
+                if let Some(sender) = &self.engine1_sender {
+                    if let Err(e) = sender.blocking_send(self.board.create_fen()) {
+                        eprintln!("Lost connection with the engine: {}", e);
+                    }
+                }
+                if let Some(sender) = &self.engine2_sender {
+                    if let Err(e) = sender.blocking_send(self.board.create_fen()) {
+                        eprintln!("Lost connection with the engine: {}", e);
+                    }
+                }
                 Command::none()
             }
+            (_, Message::LogResult(result)) => {
+                let _ = self
+                    .tournament
+                    .as_mut()
+                    .unwrap()
+                    .log_result(&result.to_owned());
+                Command::perform(async { Message::NextGame }, |msg| msg)
+            }
             (_, Message::StartTournament) => {
-                self.tournament = Some(Tournament::new(1, "./tournament_log.txt").unwrap());
+                self.tournament = Some(Tournament::new(1, "./src/ui/tournament_log.txt").unwrap());
                 Command::perform(async { Message::NextGame }, |msg| msg)
             }
             (_, Message::NextGame) => {
@@ -429,28 +466,6 @@ impl Application for Editor {
                 //
                 Command::none()
             }
-            (_, Message::PrintLegalMoves) => {
-                let mut legal_moves = MoveList::new();
-                // Get all pseudo-legal moves for the position.
-                self.movegen
-                    .generate_moves(&self.board, &mut legal_moves, MoveType::All);
-
-                for mov in legal_moves.moves.iter() {
-                    if mov.data > 0 {
-                        println!("{}{}", SQUARE_NAME[mov.from()], SQUARE_NAME[mov.to()]);
-                        // println!(
-                        //     " - {}",
-                        //     self.movegen.square_attacked(
-                        //         &self.board,
-                        //         self.board.side_to_not_move(),
-                        //         Squares::G8
-                        //     )
-                        // )
-                    }
-                }
-
-                Command::none()
-            }
             (_, Message::Settings(message)) => self.settings.update(message),
             (_, Message::ChangeSettings(message)) => {
                 if let Some(settings) = message {
@@ -463,16 +478,6 @@ impl Application for Editor {
             }
             (_, Message::SelectSideToMove(_message)) => {
                 self.board.swap_side();
-                Command::none()
-            }
-            (_, Message::UndoMoveVirtual) => {
-                if self.board.history.len() > 0 {
-                    self.board.unmake();
-                }
-                Command::none()
-            }
-            (_, Message::NextMoveVirtual) => {
-                //
                 Command::none()
             }
             (_, Message::ChangeStartPos) => {
@@ -534,7 +539,7 @@ impl Application for Editor {
                 Command::none()
             }
             (_, Message::RawMove(themove)) => {
-                //println!("{:?}", themove);
+                println!("{:?}", themove);
                 Command::none()
             }
             (_, _) => Command::none(),
@@ -559,7 +564,6 @@ impl Application for Editor {
                 self.settings.flip_board,
                 self.settings.show_coords,
                 self.settings.search_depth,
-                self.settings.game_mode,
                 self.settings.view(),
                 self.engine1_status != EngineStatus::TurnedOff,
                 size,
@@ -583,7 +587,6 @@ fn main_view<'a>(
     flip_board: bool,
     show_coordinates: bool,
     _search: u32,
-    game_mode: GameMode,
     settings_tab: Element<'a, Message, iced::Renderer<Theme>>,
     engine_started: bool,
     _size: Size,
@@ -814,39 +817,10 @@ fn main_view<'a>(
         navigation_row.push(Button::new(Text::new("Start engine")).on_press(Message::StartEngine));
 
     navigation_row =
-        navigation_row.push(Button::new(Text::new("Undo move")).on_press(Message::UndoMove));
-
-    navigation_row = navigation_row
-        .push(Button::new(Text::new("< Previous")).on_press(Message::UndoMoveVirtual));
-
-    navigation_row =
-        navigation_row.push(Button::new(Text::new("Next >")).on_press(Message::NextMoveVirtual));
-
-    navigation_row = navigation_row
-        .push(Button::new(Text::new("Reset board")).on_press(Message::ResetBoardEngine));
-
-    navigation_row = navigation_row
-        .push(Button::new(Text::new("Show legal moves")).on_press(Message::PrintLegalMoves));
-
-    navigation_row =
         navigation_row.push(Button::new(Text::new("Kiwipete")).on_press(Message::ChangeStartPos));
 
     navigation_row = navigation_row
         .push(Button::new(Text::new("Tournament")).on_press(Message::StartTournament));
-
-    let mut moves_played = Row::new()
-        .padding(3)
-        .spacing(10)
-        .align_items(Alignment::Center)
-        .width(Length::Fill);
-    for (mut index, moves) in board.history.list.iter().enumerate() {
-        if moves.next_move.data != 0 {
-            index += 1;
-            moves_played = moves_played.push(Text::new(
-                index.to_string() + ". " + &moves.next_move.as_string(),
-            ));
-        }
-    }
 
     let evaluation_bar = column![progress_bar(0.0..=100.0, eval)
         .vertical(true)
@@ -859,7 +833,7 @@ fn main_view<'a>(
         evaluation_bar,
         column![
             board_row,
-            column![side_to_play, game_mode_row, navigation_row, moves_played]
+            column![side_to_play, game_mode_row, navigation_row]
                 .width(board_height * 8)
                 .height(Length::Fill)
                 .align_items(Alignment::Center)

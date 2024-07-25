@@ -1,5 +1,4 @@
 pub mod config;
-pub mod editor;
 pub mod engine;
 pub mod engine_processing;
 pub mod settings;

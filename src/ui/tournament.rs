@@ -25,6 +25,7 @@ impl Tournament {
     }
 
     pub fn log_result(&mut self, result: &str) -> io::Result<()> {
+        self.games_played += 1;
         writeln!(self.log_file, "Game {}: {}", self.games_played, result)?;
         match result {
             "Engine 1 wins" => self.engine1_wins += 1,
@@ -32,7 +33,6 @@ impl Tournament {
             "Draw" => self.draws += 1,
             _ => (),
         }
-        self.games_played += 1;
         Ok(())
     }
 
