@@ -334,6 +334,17 @@ impl MoveGenerator {
         let bb_pawns = self.get_pawn_attacks(attacker ^ 1, square);
         let bb_queen = bb_rook | bb_bishop;
 
+        if (bb_king & attackers[Pieces::KING] > 0)
+            || (bb_rook & attackers[Pieces::ROOK] > 0)
+            || (bb_queen & attackers[Pieces::QUEEN] > 0)
+            || (bb_bishop & attackers[Pieces::BISHOP] > 0)
+            || (bb_knight & attackers[Pieces::KNIGHT] > 0)
+            || (bb_pawns & attackers[Pieces::PAWN] > 0)
+        {
+            println!("bb:BLACK {:?}", print_bitboard(board.bb_side[Sides::BLACK]));
+            println!("bb:WHITE {:?}", print_bitboard(board.bb_side[Sides::WHITE]));
+        }
+
         // Then determine if such a piece is actually there: see if a rook
         // is on one of the squares a rook has to be to reach the given
         // square. Same for the queen, knight, etc... As soon as one is

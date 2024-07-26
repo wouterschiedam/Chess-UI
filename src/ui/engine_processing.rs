@@ -107,9 +107,12 @@ pub async fn handle_engine_thinking(
         let mut buffer_str = String::new();
         let response = read_moves_from_process(reader, &mut buffer_str).await?;
 
+        // output
+        //     .try_send(Message::RawMove(response.clone()))
+        //     .expect("Error on the mspc channel in the engine subscription");
         let bestmove = response.last().unwrap().split_whitespace().nth(1).unwrap();
 
-        let mate = response[response.len() - 2]
+        let mate_or_draw = response[response.len() - 2]
             .split_whitespace()
             .nth(2)
             .unwrap_or("Helaas");
@@ -120,13 +123,25 @@ pub async fn handle_engine_thinking(
             .unwrap_or("Helaas")
             .parse::<i8>();
 
-        if mate == "mate" && mate_in.unwrap_or(1) == 0 {
+        if mate_or_draw == "draw" {
             output
                 .try_send(Message::EngineMove(
                     None,
                     None,
                     None,
-                    Some(mate.to_string()),
+                    Some(mate_or_draw.to_string()),
+                ))
+                .expect("Error on the mspc channel in the engine subscription");
+            return Ok(());
+        }
+
+        if mate_or_draw == "mate" && mate_in.unwrap_or(1) == 0 {
+            output
+                .try_send(Message::EngineMove(
+                    None,
+                    None,
+                    None,
+                    Some(mate_or_draw.to_string()),
                 ))
                 .expect("Error on the mspc channel in the engine subscription");
             return Ok(());
@@ -136,10 +151,6 @@ pub async fn handle_engine_thinking(
             algebraic_square_to_number(&bestmove[0..2]),
             algebraic_square_to_number(&bestmove[2..4]),
         );
-
-        // output
-        //     .try_send(Message::RawMove(response.clone()))
-        //     .expect("Error on the mspc channel in the engine subscription");
 
         if bestmove.len() >= 5 {
             match &bestmove[4..5] {

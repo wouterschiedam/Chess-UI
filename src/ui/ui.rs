@@ -10,7 +10,7 @@ use super::tournament::{self, Tournament};
 use crate::board::defs::{Pieces, Squares, SQUARE_NAME};
 use crate::board::Board;
 use crate::defs::{Sides, Square};
-use crate::movegen::defs::{Move, MoveList, MoveType, Shift};
+use crate::movegen::defs::{print_bitboard, Move, MoveList, MoveType, Shift};
 use crate::movegen::MoveGenerator;
 use iced::alignment::{Horizontal, Vertical};
 use iced::theme::ProgressBar;
@@ -326,6 +326,13 @@ impl Application for Editor {
                     );
                 }
 
+                if mate == Some("draw".to_string()) {
+                    return Command::perform(
+                        async move { Message::LogResult(format!("Game ended in a draw\nFen: {}", fen)) },
+                        |msg| msg,
+                    );
+                }
+
                 if from.unwrap() == 0 && to.unwrap() == 0 {
                     return Command::perform(
                         async move {
@@ -343,7 +350,24 @@ impl Application for Editor {
                     .board
                     .generate_move_data(&from.unwrap(), &to, side, promotion);
 
-                self.board.make_move(Move::new(move_data), &self.movegen);
+                let is_made = self.board.make_move(Move::new(move_data), &self.movegen);
+
+                //debug
+                if !is_made {
+                    println!(
+                        "Move: {}",
+                        SQUARE_NAME[Move::new(move_data).from()].to_owned()
+                            + SQUARE_NAME[Move::new(move_data).to()]
+                    );
+
+                    for mv in &self.board.history.list {
+                        println!(
+                            "{:?}",
+                            SQUARE_NAME[mv.next_move.from()].to_owned()
+                                + SQUARE_NAME[mv.next_move.to()]
+                        );
+                    }
+                }
 
                 if let Some(sender) = &self.engine1_sender {
                     if let Err(e) = sender.blocking_send(self.board.create_fen()) {

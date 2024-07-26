@@ -87,6 +87,7 @@ impl Board {
         self.bb_side[side] ^= BB_SQUARES[square];
         self.piece_list[square] = Pieces::NONE;
         self.gamestate.zobrist_key ^= self.zr.piece(side, square, piece);
+
         // Update material
         if !self.gamestate.material[side] < PIECE_VALUES[piece] {
             self.gamestate.material[side] -= PIECE_VALUES[piece];
