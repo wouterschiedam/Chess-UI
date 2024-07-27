@@ -2,7 +2,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use super::config::{Clock, GameMode, PromotionChoice, Promotions, UIConfig};
-use super::engine::{EngineStatus, UIengine};
+use super::engine::{Engine1, Engine2, EngineStatus, UIengine};
 use super::settings::{SettingsMessage, SettingsTab};
 use super::styling::button::CustomButtonStyle;
 use super::styling::container::container_appearance;
@@ -369,16 +369,22 @@ impl Application for Editor {
                     }
                 }
 
-                if let Some(sender) = &self.engine1_sender {
-                    if let Err(e) = sender.blocking_send(self.board.create_fen()) {
-                        eprintln!("Lost connection with the engine: {}", e);
+                if self.board.side_to_move() == Sides::WHITE {
+                    println!("{:?}", self.engine1_sender);
+                    if let Some(sender) = &self.engine1_sender {
+                        if let Err(e) = sender.blocking_send(self.board.create_fen()) {
+                            eprintln!("Lost connection with the engine1: {}", e);
+                        }
+                    }
+                } else if self.board.side_to_move() == Sides::BLACK {
+                    println!("{:?}", self.engine2_sender);
+                    if let Some(sender) = &self.engine2_sender {
+                        if let Err(e) = sender.blocking_send(self.board.create_fen()) {
+                            println!("Lost connection with the engine2: {}", e);
+                        }
                     }
                 }
-                if let Some(sender) = &self.engine2_sender {
-                    if let Err(e) = sender.blocking_send(self.board.create_fen()) {
-                        eprintln!("Lost connection with the engine: {}", e);
-                    }
-                }
+
                 Command::none()
             }
             (_, Message::LogResult(result)) => {
@@ -390,7 +396,11 @@ impl Application for Editor {
                 Command::perform(async { Message::NextGame }, |msg| msg)
             }
             (_, Message::StartTournament) => {
+                self.engine1_status = EngineStatus::TurnedOn;
+                self.engine2_status = EngineStatus::TurnedOn;
+
                 self.tournament = Some(Tournament::new(10, "./src/ui/tournament_log.txt").unwrap());
+
                 Command::perform(async { Message::NextGame }, |msg| msg)
             }
             (_, Message::NextGame) => {
@@ -480,6 +490,7 @@ impl Application for Editor {
                 {
                     self.engine2_sender = Some(message);
                 }
+
                 if self.settings.game_mode == GameMode::EngineEngine {
                     if let Some(engine1_sender) = &self.engine1_sender {
                         if let Err(e) = engine1_sender.blocking_send(self.board.create_fen()) {
@@ -577,7 +588,12 @@ impl Application for Editor {
         match self.engine1_status {
             EngineStatus::TurnedOff => iced::subscription::events().map(Message::EventOccurred),
             _ => Subscription::batch(vec![
-                self.engine1.clone().run_engine(),
+                self.engine1
+                    .clone()
+                    .run_engine(std::any::TypeId::of::<Engine1>()),
+                self.engine2
+                    .clone()
+                    .run_engine(std::any::TypeId::of::<Engine2>()),
                 iced::subscription::events().map(Message::EventOccurred),
                 iced::time::every(std::time::Duration::from_millis(1000)).map(|_| Message::Tick),
             ]),

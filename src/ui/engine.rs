@@ -19,6 +19,9 @@ pub enum EngineStatus {
     TurnedOn,
 }
 
+pub struct Engine1;
+pub struct Engine2;
+
 pub enum EngineState {
     Start(UIengine),
     Thinking(Child, u32, Receiver<String>),
@@ -44,28 +47,24 @@ impl UIengine {
         }
     }
 
-    pub fn run_engine(self) -> Subscription<Message> {
-        subscription::channel(
-            std::any::TypeId::of::<UIengine>(),
-            100,
-            move |mut output| {
-                let engine1 = self.clone();
+    pub fn run_engine(self, channel_id: std::any::TypeId) -> Subscription<Message> {
+        subscription::channel(channel_id, 100, move |mut output| {
+            let engine1 = self.clone();
 
-                async move {
-                    let mut state1 = EngineState::Start(engine1.clone());
+            async move {
+                let mut state1 = EngineState::Start(engine1.clone());
 
-                    loop {
-                        state1 = match run_single_engine(state1, &engine1, &mut output).await {
-                            Ok(new_state) => new_state,
-                            Err(e) => {
-                                eprintln!("Engine 1 encountered an error: {}", e);
-                                EngineState::TurnedOff
-                            }
-                        };
-                    }
+                loop {
+                    state1 = match run_single_engine(state1, &engine1, &mut output).await {
+                        Ok(new_state) => new_state,
+                        Err(e) => {
+                            eprintln!("Engine 1 encountered an error: {}", e);
+                            EngineState::TurnedOff
+                        }
+                    };
                 }
-            },
-        )
+            }
+        })
     }
 }
 
