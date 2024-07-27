@@ -123,15 +123,6 @@ impl Board {
             self.unmake();
         }
 
-        println!(
-            "Black bitboard after move: {:064b}",
-            self.bb_side[Sides::BLACK]
-        );
-        println!(
-            "White bitboard after move: {:064b}",
-            self.bb_side[Sides::WHITE]
-        );
-
         is_legal
     }
 }

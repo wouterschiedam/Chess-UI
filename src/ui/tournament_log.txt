@@ -1,2 +1,0 @@
-Game 1: Check mate, black won the game
-Fen: 8/p5k1/6p1/3p4/3P4/b5r1/PKP5/R7 w - - 6 41

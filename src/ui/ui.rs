@@ -361,23 +361,26 @@ impl Application for Editor {
                     );
 
                     for mv in &self.board.history.list {
-                        println!(
-                            "{:?}",
-                            SQUARE_NAME[mv.next_move.from()].to_owned()
-                                + SQUARE_NAME[mv.next_move.to()]
-                        );
+                        if SQUARE_NAME[mv.next_move.from()].to_owned()
+                            + SQUARE_NAME[mv.next_move.to()]
+                            != "a1a1"
+                        {
+                            println!(
+                                "{:?}",
+                                SQUARE_NAME[mv.next_move.from()].to_owned()
+                                    + SQUARE_NAME[mv.next_move.to()]
+                            );
+                        }
                     }
                 }
 
                 if self.board.side_to_move() == Sides::WHITE {
-                    println!("{:?}", self.engine1_sender);
                     if let Some(sender) = &self.engine1_sender {
                         if let Err(e) = sender.blocking_send(self.board.create_fen()) {
                             eprintln!("Lost connection with the engine1: {}", e);
                         }
                     }
                 } else if self.board.side_to_move() == Sides::BLACK {
-                    println!("{:?}", self.engine2_sender);
                     if let Some(sender) = &self.engine2_sender {
                         if let Err(e) = sender.blocking_send(self.board.create_fen()) {
                             println!("Lost connection with the engine2: {}", e);
@@ -399,7 +402,7 @@ impl Application for Editor {
                 self.engine1_status = EngineStatus::TurnedOn;
                 self.engine2_status = EngineStatus::TurnedOn;
 
-                self.tournament = Some(Tournament::new(10, "./src/ui/tournament_log.txt").unwrap());
+                self.tournament = Some(Tournament::new(10, "./ui/tournament_log.txt").unwrap());
 
                 Command::perform(async { Message::NextGame }, |msg| msg)
             }
